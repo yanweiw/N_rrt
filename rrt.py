@@ -9,14 +9,21 @@ import matplotlib.patches as patches
 
 # how big is our world?
 SIZE = 100
-qinit = (50,50)
-navigation = []
+navigation = [] # path connecting qinit to target
 
+# world records the center coordinates and radius of circular obstacles
+# G is a graph of current vertices and edges, implemented by dict G[vertex] = parent vertex
 
 def rand_conf():
+    '''
+    generate random positions on the map
+    '''
     return (rd.randint(0,SIZE),rd.randint(0,SIZE))
 
 def near_vert(qrand, G):
+    '''
+    find the nearest vertex
+    '''
     l2dist = math.sqrt(SIZE**2+SIZE**2) #max distance on the board
     qnear = (-1,-1) # edge case, no nearest vertex is found
     for q in G:
@@ -29,6 +36,9 @@ def near_vert(qrand, G):
     return qnear
 
 def collide(qnear, qrand, world, G):
+    '''
+    check if edge between qnear and qrand collides with world obstacles
+    '''
     # collision check, world is array of circles currently
     x1 = qrand[0]
     y1 = qrand[1]
@@ -47,10 +57,13 @@ def collide(qnear, qrand, world, G):
             d = dist.euclidean((x3,y3),(x2,y2))
         else:
             d = dist.euclidean((x3,y3),(x1,y1))
-        if d <= r + SIZE * 0.01:
+        if d <= r + SIZE * 0.01: # not only collide but also leave some space in between
             return True
 
     for seg in G:
+        '''
+        check edges do not cross each other
+        '''
         x3 = seg[0]
         y3 = seg[1]
         x4 = G[seg][0]
@@ -67,23 +80,34 @@ def collide(qnear, qrand, world, G):
 
     return False
 
-def limitrange(qrand, qnear,qdelta):
+def limitrange(qrand, qnear, qdelta):
+    '''
+    discard explorations that are too close, within 0.02 * SIZE
+    cap the exploration length by the remainder of length / (SIZE * qdelta)
+    '''
     d = dist.euclidean(qrand,qnear)
     if d < SIZE * 0.02:
-        return (-1, -1)
+        return (-1, -1) #discard
     newd = d%(SIZE*qdelta)
     qnew = qnear + (qrand - qnear)*newd/d
     return tuple(qnew)
 
 def navigate(G, qinit, target):
+    '''
+    create navigation path
+    '''
     global navigation
     navigation.append(target)
     next = target
     while next != qinit:
+        print next
         next = G[next]
         navigation.append(next)
 
 def rrt(qinit, target, qdelta, world, K):
+    '''
+    implementation of rrt
+    '''
     # initialize graph as dict of tuples as coordinates
     G = {qinit:qinit} # use self-reference to indicate start
 
@@ -91,20 +115,22 @@ def rrt(qinit, target, qdelta, world, K):
     while k < K:
         qrand = rand_conf()
         qnear = near_vert(qrand, G)
-        if qnear == (-1, -1):
+        if qnear == (-1, -1): #(-1,-1) are cases to ignore
             continue
         qnew = limitrange(np.asarray(qrand), np.asarray(qnear),qdelta)
-        if qnew == (-1, -1):
-            continue    # too short of an exploration
-        if G.has_key(qnew):
+        if qnew == (-1, -1):  # too short of an exploration
+            continue
+        if G.has_key(qnew): # discard repeated vertex
             continue
         if collide(qnear, qnew, world, G):
             continue
         G[qnew] = qnear
-        if dist.euclidean(qnew, target) <= SIZE*0.02:
-            G[target] = qnew
-            navigate(G, qinit, target)
-            return G
+        if target != (-1,-1):
+            if dist.euclidean(qnew, target) <= SIZE*0.02:
+                if target != qnew:
+                    G[target] = qnew
+                navigate(G, qinit, target)
+                return G
         k += 1
 
     return G
@@ -124,13 +150,17 @@ def generate_circles(num, mean, std):
     circles[:,0] = np.random.normal(mean, std, size=(num,))
     return circles
 
-# generate circles:
 def createworld():
+    '''
+    create a world map of 10 circular obstacles of random size and postion
+    '''
     world = generate_circles(10, 8, 3)
     return world
 
 def printgraph(start, end, G, world, printedges=True):
-    # G is a dict of tuples, key is vert while value is its parent
+    '''
+    print navigation from start to end, with the option to only print obstacles
+    '''
     global navigation
     plt.close()
     ax = plt.subplot(111)
@@ -153,20 +183,23 @@ def printgraph(start, end, G, world, printedges=True):
         patch = patches.PathPatch(path)
         ax.add_patch(patch)
         # print navigation from start to end
-        stops = []
-        moves = []
-        for i, q in enumerate(navigation[:-1]):
-            stops.append(q)
-            stops.append(navigation[i+1])
-            moves.append(Path.MOVETO)
-            moves.append(Path.LINETO)
-        route = Path(stops, moves)
-        patch2 = patches.PathPatch(route, color='orange', lw=2)
-        ax.add_patch(patch2)
         plt.plot(start[0], start[1], marker='o', color='red', lw=2)
-        plt.plot(end[0], end[1], marker='o', color='blue', lw=2)
         ax.text(start[0], start[1], 'start')
+        plt.plot(end[0], end[1], marker='o', color='green', lw=2)
         ax.text(end[0], end[1], 'end')
+        if navigation != []:
+        # if end != (-1,-1):
+            stops = []
+            moves = []
+            for i, q in enumerate(navigation[:-1]):
+                stops.append(q)
+                stops.append(navigation[i+1])
+                moves.append(Path.MOVETO)
+                moves.append(Path.LINETO)
+            route = Path(stops, moves)
+            patch2 = patches.PathPatch(route, color='orange', lw=2)
+            ax.add_patch(patch2)
+
 
     plt.xlim([0,SIZE])
     plt.ylim([0,SIZE])
@@ -178,14 +211,23 @@ def printgraph(start, end, G, world, printedges=True):
     plt.show(block=False)
 
 def worldblockstart(world,qinit,target,qdelta):
+    '''
+    check if the qinit and target coincide with world obstacles
+    '''
     for circle in world:
         if dist.euclidean(circle[1:],qinit) <= circle[0] + SIZE*0.01:
             return True
-        if dist.euclidean(circle[1:],target) <= circle[0] + SIZE*0.01:
-            return True
+        if target != (-1,-1):
+            if dist.euclidean(circle[1:],target) <= circle[0] + SIZE*0.01:
+                return True
     return False
 
-def findpath(start, end, qdelta, K=SIZE**2, printedges=True):
+def findpath(qdelta, start=(50,50), end=(-1,-1), K=1000, printedges=True):
+    '''
+    main function to run rrt capped at 1000 iterations by default
+    with the option of changing K, omitting end to just print graph
+    and giving printedges False value to just print world
+    '''
     global navigation
     navigation = [] # reinitialize this global variable everytime
 
