@@ -1,15 +1,17 @@
 import numpy as np
 import random as rd
 from scipy.spatial import distance as dist
+from scipy.misc import imread
 import math
 
 import matplotlib.pyplot as plt
 from matplotlib.path import Path
 import matplotlib.patches as patches
 
-# how big is our world?
+# how big is our world? Expecting a square world
 SIZE = 100
 navigation = [] # path connecting qinit to target
+ax = plt.subplot(111)
 
 # world records the center coordinates and radius of circular obstacles
 # G is a graph of current vertices and edges, implemented by dict G[vertex] = parent vertex
@@ -157,49 +159,57 @@ def createworld():
     world = generate_circles(10, 8, 3)
     return world
 
-def printgraph(start, end, G, world, printedges=True):
+def printworld(worldfile, world):
     '''
-    print navigation from start to end, with the option to only print obstacles
+    print world, if worldfile is 'None', print world as circles
+    otherwise, print world as binary image
+    '''
+    global SIZE
+    global ax
+
+    if worldfile == 'None':
+        fcirc = lambda x: patches.Circle((x[1],x[2]), radius=x[0], fill=True, alpha=1, fc='k', ec='k')
+        circs = [fcirc(x) for x in world]
+        for c in circs:
+            ax.add_patch(c)
+    else:
+        print SIZE
+        plt.imshow(world, cmap=plt.cm.binary, interpolation='nearest',origin='lower',extent=[0,SIZE,0,SIZE])
+
+def printgraph(start, end, G, world):
+    '''
+    print navigation from start to end
     '''
     global navigation
-    plt.close()
-    ax = plt.subplot(111)
+    global ax
 
-    fcirc = lambda x: patches.Circle((x[1],x[2]), radius=x[0], fill=True, alpha=1, fc='k', ec='k')
-    circs = [fcirc(x) for x in world]
-    for c in circs:
-        ax.add_patch(c)
-
-    if printedges:
-        # print exploration edges
-        verts = []
-        codes = []
-        for q in G:
-            verts.append(list(q))
-            verts.append(list(G[q]))
-            codes.append(Path.MOVETO)
-            codes.append(Path.LINETO)
-        path = Path(verts, codes)
-        patch = patches.PathPatch(path)
-        ax.add_patch(patch)
-        # print navigation from start to end
-        plt.plot(start[0], start[1], marker='o', color='red', lw=2)
-        ax.text(start[0], start[1], 'start')
-        plt.plot(end[0], end[1], marker='o', color='green', lw=2)
-        ax.text(end[0], end[1], 'end')
-        if navigation != []:
-        # if end != (-1,-1):
-            stops = []
-            moves = []
-            for i, q in enumerate(navigation[:-1]):
-                stops.append(q)
-                stops.append(navigation[i+1])
-                moves.append(Path.MOVETO)
-                moves.append(Path.LINETO)
-            route = Path(stops, moves)
-            patch2 = patches.PathPatch(route, color='orange', lw=2)
-            ax.add_patch(patch2)
-
+    verts = []
+    codes = []
+    for q in G:
+        verts.append(list(q))
+        verts.append(list(G[q]))
+        codes.append(Path.MOVETO)
+        codes.append(Path.LINETO)
+    path = Path(verts, codes)
+    patch = patches.PathPatch(path)
+    ax.add_patch(patch)
+    # print navigation from start to end
+    plt.plot(start[0], start[1], marker='o', color='red', lw=2)
+    ax.text(start[0], start[1], 'start')
+    plt.plot(end[0], end[1], marker='o', color='green', lw=2)
+    ax.text(end[0], end[1], 'end')
+    if navigation != []:
+    # if end != (-1,-1):
+        stops = []
+        moves = []
+        for i, q in enumerate(navigation[:-1]):
+            stops.append(q)
+            stops.append(navigation[i+1])
+            moves.append(Path.MOVETO)
+            moves.append(Path.LINETO)
+        route = Path(stops, moves)
+        patch2 = patches.PathPatch(route, color='orange', lw=2)
+        ax.add_patch(patch2)
 
     plt.xlim([0,SIZE])
     plt.ylim([0,SIZE])
@@ -208,33 +218,61 @@ def printgraph(start, end, G, world, printedges=True):
     ax.set_aspect('equal')
     ax.set_xticklabels([])
     ax.set_yticklabels([])
-    plt.show(block=False)
 
-def worldblockstart(world,qinit,target,qdelta):
+def worldblockstart(world,qinit,target):
     '''
     check if the qinit and target coincide with world obstacles
     '''
     for circle in world:
-        if dist.euclidean(circle[1:],qinit) <= circle[0] + SIZE*0.01:
+        if dist.euclidean(circle[1:],qinit) <= circle[0]:
             return True
         if target != (-1,-1):
-            if dist.euclidean(circle[1:],target) <= circle[0] + SIZE*0.01:
+            if dist.euclidean(circle[1:],target) <= circle[0]:
                 return True
     return False
 
-def findpath(qdelta, start=(50,50), end=(-1,-1), K=1000, printedges=True):
+def findpath(qdelta, start=(50,50), end=(-1,-1), worldfile='None', K=1000, printedges=True):
     '''
     main function to run rrt capped at 1000 iterations by default
     with the option of changing K, omitting end to just print graph
     and giving printedges False value to just print world
+    Also, with the option to provide your own world, expecting binary square image
     '''
     global navigation
+    global SIZE
+    global ax
+
     navigation = [] # reinitialize this global variable everytime
+    plt.close()
+    ax = plt.subplot(111)
 
-    while True:
-        world = createworld()
-        if not worldblockstart(world,start,end,qdelta):
-            break
+    if worldfile == 'None':
+        while True:
+            SIZE = 100
+            world = createworld()
+            if not worldblockstart(world,start,end):
+                break
+        printworld(worldfile, world)
+    else:
+        world = []
+        binaryworld = imread(worldfile)
+        binaryworld = np.flipud(binaryworld)
+        SIZE = binaryworld.shape[0]
+        for x in range(SIZE):
+            for y in range(SIZE):
+                if binaryworld[x][y][0] == 0:
+                    world.append([0.5, x+0.5, y+0.5])
+        world = np.asarray(world)
+        print world
+        try:
+            if worldblockstart(world, start, end):
+                raise ValueError("start and end are not in open space")
+        except ValueError as e:
+            print(e)
+        printworld('None', world)
 
-    G = rrt(start, end, qdelta, world, K)
-    printgraph(start, end, G, world, printedges)
+    if printedges:
+        G = rrt(start, end, qdelta, world, K)
+        printgraph(start, end, G, worldfile)
+
+    plt.show(block=False)
