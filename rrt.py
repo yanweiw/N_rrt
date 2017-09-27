@@ -12,6 +12,7 @@ import matplotlib.patches as patches
 SIZE = 100
 navigation = [] # path connecting qinit to target
 ax = plt.subplot(111)
+PERCENTAGE_SPACE_TO_LEAVE = 0.03 #controls how much space in periphery of a vertice to leave
 
 # world records the center coordinates and radius of circular obstacles
 # G is a graph of current vertices and edges, implemented by dict G[vertex] = parent vertex
@@ -59,7 +60,7 @@ def collide(qnear, qrand, world, G):
             d = dist.euclidean((x3,y3),(x2,y2))
         else:
             d = dist.euclidean((x3,y3),(x1,y1))
-        if d <= r + SIZE * 0.01: # not only collide but also leave some space in between
+        if d <= r + SIZE * PERCENTAGE_SPACE_TO_LEAVE:
             return True
 
     for seg in G:
@@ -84,11 +85,11 @@ def collide(qnear, qrand, world, G):
 
 def limitrange(qrand, qnear, qdelta):
     '''
-    discard explorations that are too close, within 0.02 * SIZE
+    discard explorations that are too close, within PERCENTAGE_SPACE_TO_LEAVE * SIZE
     cap the exploration length by the remainder of length / (SIZE * qdelta)
     '''
     d = dist.euclidean(qrand,qnear)
-    if d < SIZE * 0.02:
+    if d < SIZE * PERCENTAGE_SPACE_TO_LEAVE:
         return (-1, -1) #discard
     newd = d%(SIZE*qdelta)
     qnew = qnear + (qrand - qnear)*newd/d
@@ -102,40 +103,8 @@ def navigate(G, qinit, target):
     navigation.append(target)
     next = target
     while next != qinit:
-        print next
         next = G[next]
         navigation.append(next)
-
-def rrt(qinit, target, qdelta, world, K):
-    '''
-    implementation of rrt
-    '''
-    # initialize graph as dict of tuples as coordinates
-    G = {qinit:qinit} # use self-reference to indicate start
-
-    k = 0
-    while k < K:
-        qrand = rand_conf()
-        qnear = near_vert(qrand, G)
-        if qnear == (-1, -1): #(-1,-1) are cases to ignore
-            continue
-        qnew = limitrange(np.asarray(qrand), np.asarray(qnear),qdelta)
-        if qnew == (-1, -1):  # too short of an exploration
-            continue
-        if G.has_key(qnew): # discard repeated vertex
-            continue
-        if collide(qnear, qnew, world, G):
-            continue
-        G[qnew] = qnear
-        if target != (-1,-1):
-            if dist.euclidean(qnew, target) <= SIZE*0.02:
-                if target != qnew:
-                    G[target] = qnew
-                navigate(G, qinit, target)
-                return G
-        k += 1
-
-    return G
 
 def generate_circles(num, mean, std):
     """
@@ -159,7 +128,19 @@ def createworld():
     world = generate_circles(10, 8, 3)
     return world
 
-def printworld(worldfile, world):
+def worldblockstart(world,qinit,target):
+    '''
+    check if the qinit and target coincide with world obstacles
+    '''
+    for circle in world:
+        if dist.euclidean(circle[1:],qinit) <= circle[0]:
+            return True
+        if target != (-1,-1):
+            if dist.euclidean(circle[1:],target) <= circle[0]:
+                return True
+    return False
+
+def printworld(worldfile, start, end):
     '''
     print world, if worldfile is 'None', print world as circles
     otherwise, print world as binary image
@@ -168,13 +149,36 @@ def printworld(worldfile, world):
     global ax
 
     if worldfile == 'None':
+        #create world
+        while True:
+            SIZE = 100
+            world = createworld()
+            if not worldblockstart(world,start,end):
+                break
+        #draw the circles
         fcirc = lambda x: patches.Circle((x[1],x[2]), radius=x[0], fill=True, alpha=1, fc='k', ec='k')
         circs = [fcirc(x) for x in world]
         for c in circs:
             ax.add_patch(c)
     else:
-        print SIZE
-        plt.imshow(world, cmap=plt.cm.binary, interpolation='nearest',origin='lower',extent=[0,SIZE,0,SIZE])
+        world = []
+        binaryworld = imread(worldfile)
+        binaryworld = np.flipud(binaryworld)
+        SIZE = binaryworld.shape[0]
+        for x in range(SIZE):
+            for y in range(SIZE):
+                if binaryworld[y][x][0] == 0:
+                    world.append([0.5, x+0.5, y+0.5])
+        world = np.asarray(world)
+        try:
+            if worldblockstart(world, start, end):
+                raise ValueError("start and end are not in open space")
+        except ValueError as e:
+            print(e)
+        #draw the binary image
+        plt.imshow(binaryworld, cmap=plt.cm.binary, interpolation='nearest',origin='lower',extent=[0,SIZE,0,SIZE])
+
+        return world
 
 def printgraph(start, end, G, world):
     '''
@@ -194,10 +198,10 @@ def printgraph(start, end, G, world):
     patch = patches.PathPatch(path)
     ax.add_patch(patch)
     # print navigation from start to end
-    plt.plot(start[0], start[1], marker='o', color='red', lw=2)
-    ax.text(start[0], start[1], 'start')
-    plt.plot(end[0], end[1], marker='o', color='green', lw=2)
-    ax.text(end[0], end[1], 'end')
+    plt.plot(start[0], start[1], marker='o', alpha=.5, markersize=18, color='red')
+    # ax.text(start[0], start[1], 'start')
+    plt.plot(end[0], end[1], marker='o', alpha=.5, markersize=18, color='green')
+    # ax.text(end[0], end[1], 'end')
     if navigation != []:
     # if end != (-1,-1):
         stops = []
@@ -208,28 +212,51 @@ def printgraph(start, end, G, world):
             moves.append(Path.MOVETO)
             moves.append(Path.LINETO)
         route = Path(stops, moves)
-        patch2 = patches.PathPatch(route, color='orange', lw=2)
+        patch2 = patches.PathPatch(route, color='orange', alpha=.5, lw=5)
         ax.add_patch(patch2)
 
+def showpath():
+    global ax
+    global SIZE
     plt.xlim([0,SIZE])
     plt.ylim([0,SIZE])
-    plt.xticks(range(0,SIZE + 1))
-    plt.yticks(range(0,SIZE + 1))
+    # plt.xticks(range(0,SIZE + 1))
+    # plt.yticks(range(0,SIZE + 1))
     ax.set_aspect('equal')
-    ax.set_xticklabels([])
-    ax.set_yticklabels([])
+    # ax.set_xticklabels(['x'])
+    # ax.set_yticklabels([])
+    plt.show(block=False)
 
-def worldblockstart(world,qinit,target):
+def rrt(qinit, target, qdelta, world, K):
     '''
-    check if the qinit and target coincide with world obstacles
+    implementation of rrt
     '''
-    for circle in world:
-        if dist.euclidean(circle[1:],qinit) <= circle[0]:
-            return True
+    # initialize graph as dict of tuples as coordinates
+    G = {qinit:qinit} # use self-reference to indicate start
+
+    k = 0
+    while k < K:
+        qrand = rand_conf()
+        qnear = near_vert(qrand, G)
+        if qnear == (-1, -1): #(-1,-1) are cases to ignore
+            continue
+        qnew = limitrange(np.asarray(qrand), np.asarray(qnear),qdelta)
+        if qnew == (-1, -1):  # too short of an exploration
+            continue
+        if G.has_key(qnew): # discard repeated vertex
+            continue
+        if collide(qnear, qnew, world, G):
+            continue
+        G[qnew] = qnear
         if target != (-1,-1):
-            if dist.euclidean(circle[1:],target) <= circle[0]:
-                return True
-    return False
+            if dist.euclidean(qnew, target) <= SIZE*PERCENTAGE_SPACE_TO_LEAVE: # close enough to target
+                if target != qnew:
+                    G[target] = qnew
+                navigate(G, qinit, target)
+                return G
+        k += 1
+
+    return G
 
 def findpath(qdelta, start=(50,50), end=(-1,-1), worldfile='None', K=1000, printedges=True):
     '''
@@ -242,37 +269,14 @@ def findpath(qdelta, start=(50,50), end=(-1,-1), worldfile='None', K=1000, print
     global SIZE
     global ax
 
-    navigation = [] # reinitialize this global variable everytime
     plt.close()
     ax = plt.subplot(111)
+    navigation = [] # reinitialize this global variable everytime
 
-    if worldfile == 'None':
-        while True:
-            SIZE = 100
-            world = createworld()
-            if not worldblockstart(world,start,end):
-                break
-        printworld(worldfile, world)
-    else:
-        world = []
-        binaryworld = imread(worldfile)
-        binaryworld = np.flipud(binaryworld)
-        SIZE = binaryworld.shape[0]
-        for x in range(SIZE):
-            for y in range(SIZE):
-                if binaryworld[x][y][0] == 0:
-                    world.append([0.5, x+0.5, y+0.5])
-        world = np.asarray(world)
-        print world
-        try:
-            if worldblockstart(world, start, end):
-                raise ValueError("start and end are not in open space")
-        except ValueError as e:
-            print(e)
-        printworld('None', world)
+    world = printworld(worldfile, start, end)
 
     if printedges:
         G = rrt(start, end, qdelta, world, K)
         printgraph(start, end, G, worldfile)
 
-    plt.show(block=False)
+    showpath()
