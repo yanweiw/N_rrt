@@ -148,6 +148,7 @@ def printworld(worldfile, start, end):
     global SIZE
     global ax
 
+    world = []
     if worldfile == 'None':
         #create world
         while True:
@@ -161,7 +162,6 @@ def printworld(worldfile, start, end):
         for c in circs:
             ax.add_patch(c)
     else:
-        world = []
         binaryworld = imread(worldfile)
         binaryworld = np.flipud(binaryworld)
         SIZE = binaryworld.shape[0]
@@ -176,9 +176,9 @@ def printworld(worldfile, start, end):
         except ValueError as e:
             print(e)
         #draw the binary image
-        plt.imshow(binaryworld, cmap=plt.cm.binary, interpolation='nearest',origin='lower',extent=[0,SIZE,0,SIZE])
+        plt.imshow(binaryworld[:,:,0], cmap=plt.cm.Purples_r, interpolation='nearest',origin='lower',extent=[0,SIZE,0,SIZE])
 
-        return world
+    return world
 
 def printgraph(start, end, G, world):
     '''
