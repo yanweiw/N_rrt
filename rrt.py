@@ -133,10 +133,10 @@ def worldblockstart(world,qinit,target):
     check if the qinit and target coincide with world obstacles
     '''
     for circle in world:
-        if dist.euclidean(circle[1:],qinit) <= circle[0]:
+        if dist.euclidean(circle[1:],qinit) <= circle[0] + SIZE*PERCENTAGE_SPACE_TO_LEAVE:
             return True
         if target != (-1,-1):
-            if dist.euclidean(circle[1:],target) <= circle[0]:
+            if dist.euclidean(circle[1:],target) <= circle[0] + SIZE*PERCENTAGE_SPACE_TO_LEAVE:
                 return True
     return False
 
@@ -170,11 +170,10 @@ def printworld(worldfile, start, end):
                 if binaryworld[y][x][0] == 0:
                     world.append([0.5, x+0.5, y+0.5])
         world = np.asarray(world)
-        try:
-            if worldblockstart(world, start, end):
-                raise ValueError("start and end are not in open space")
-        except ValueError as e:
-            print(e)
+        print 'got here'
+        if worldblockstart(world, start, end):
+            raise ValueError("start and end are not in open space")
+
         #draw the binary image
         plt.imshow(binaryworld[:,:,0], cmap=plt.cm.Purples_r, interpolation='nearest',origin='lower',extent=[0,SIZE,0,SIZE])
 
@@ -233,7 +232,7 @@ def rrt(qinit, target, qdelta, world, K):
     '''
     # initialize graph as dict of tuples as coordinates
     G = {qinit:qinit} # use self-reference to indicate start
-
+    showpath()
     k = 0
     while k < K:
         qrand = rand_conf()
